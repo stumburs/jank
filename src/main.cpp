@@ -1,13 +1,16 @@
 #include <iostream>
 #include <fstream>
 #include <sstream>
+#include "lexer.hpp"
+#include "parser.hpp"
+#include "qbe_codegen.hpp"
 
 int main(int argc, const char *argv[])
 {
-    for (int i = 0; i < argc; i++)
-    {
-        std::cout << argv[i] << std::endl;
-    }
+    // for (int i = 0; i < argc; i++)
+    // {
+    //     std::cout << argv[i] << std::endl;
+    // }
 
     if (argc < 2)
     {
@@ -25,5 +28,23 @@ int main(int argc, const char *argv[])
         content << input.rdbuf();
     }
 
-    std::cout << content.str() << std::endl;
+    std::cout << content.str() << '\n';
+
+    Lexer lexer("main.jank", content.str());
+    auto tokens = lexer.tokenize();
+    lexer.print_tokens(tokens);
+
+    // Parser parser(tokens);
+    // auto program = Parser(tokens).parse_program();
+
+    // QBECodegen qbe_codegen;
+    // std::string qbe = qbe_codegen.generate(program);
+
+    // std::ofstream qbe_file("test.ssa");
+
+    // qbe_file << qbe;
+
+    // std::cout << qbe << std::endl;
+
+    // std::cout << content.str() << std::endl;
 }
