@@ -4,6 +4,7 @@
 #include "lexer.hpp"
 #include "parser.hpp"
 #include "qbe_codegen.hpp"
+#include "ast_printer.hpp"
 
 int main(int argc, const char *argv[])
 {
@@ -35,7 +36,18 @@ int main(int argc, const char *argv[])
     lexer.print_tokens(tokens);
 
     // Parser parser(tokens);
-    // auto program = Parser(tokens).parse_program();
+    auto program = Parser(tokens).parse_program();
+
+    ASTPrinter printer;
+    for (const auto &stmt : program)
+    {
+        printer.print(stmt.get());
+    }
+
+    std::ofstream fout("out.qbe");
+    QBECodegen codegen(fout);
+
+    codegen.emit_program(program);
 
     // QBECodegen qbe_codegen;
     // std::string qbe = qbe_codegen.generate(program);

@@ -2,7 +2,11 @@ let a = 10;
 let b = 20.5;
 let c = a + b;
 
+fn add(a, b) {
+    return a + b;
+}
+
 fn main() {
     println("Hello");
-    println(a, "+", b, "=", c);
+    println(add(a, b));
 }

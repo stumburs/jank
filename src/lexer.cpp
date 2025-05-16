@@ -14,6 +14,20 @@ std::vector<Token> Lexer::tokenize()
             continue;
         }
 
+        // Handle single-line comments starting with //
+        if (c == '/' && this->peek_next() == '/')
+        {
+            // Consume both slashes
+            this->advance();
+            this->advance();
+
+            // Skip until end of line or eof
+            while (!this->eof() && this->peek() != '\n')
+                this->advance();
+
+            continue; // Skip comment and continue tokenizing
+        }
+
         if (std::isdigit(c) || (c == '.' && std::isdigit(this->peek_next())))
         {
             tokens.push_back(this->make_number());
