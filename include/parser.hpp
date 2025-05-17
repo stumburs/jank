@@ -1,113 +1,20 @@
 #pragma once
 #include <memory>
 #include "lexer.hpp"
-
-struct Expr
-{
-    int line = -1;
-    virtual ~Expr() = default;
-};
-
-struct IntExpr : Expr
-{
-    int value;
-    IntExpr(int value, int line) : value(value) { this->line = line; }
-};
-
-struct FloatExpr : Expr
-{
-    float value;
-    FloatExpr(float value, int line) : value(value) { this->line = line; }
-};
-
-struct StringExpr : Expr
-{
-    std::string value;
-    StringExpr(std::string value, int line) : value(std::move(value)) { this->line = line; }
-};
-
-struct BinaryExpr : Expr
-{
-    std::unique_ptr<Expr> lhs;
-    std::string op;
-    std::unique_ptr<Expr> rhs;
-
-    BinaryExpr(std::unique_ptr<Expr> lhs, std::string op, std::unique_ptr<Expr> rhs, int line)
-        : lhs(std::move(lhs)), op(op), rhs(std::move(rhs))
-    {
-        this->line = line;
-    }
-};
-
-struct IdentifierExpr : Expr
-{
-    std::string name;
-    IdentifierExpr(std::string name, int line) : name(std::move(name)) { this->line = line; }
-};
-
-struct CallExpr : Expr
-{
-    std::string name;
-    std::vector<std::unique_ptr<Expr>> arguments;
-    CallExpr(std::string name, std::vector<std::unique_ptr<Expr>> arguments, int line)
-        : name(std::move(name)), arguments(std::move(arguments)) { this->line = line; }
-};
-
-// Statements
-struct Stmt
-{
-    virtual ~Stmt() = default;
-};
-
-struct LetStmt : Stmt
-{
-    std::string name;
-    std::unique_ptr<Expr> value;
-    LetStmt(std::string name, std::unique_ptr<Expr> value)
-        : name(std::move(name)), value(std::move(value)) {}
-};
-
-struct ExprStmt : Stmt
-{
-    std::unique_ptr<Expr> expr;
-
-    ExprStmt(std::unique_ptr<Expr> expr) : expr(std::move(expr)) {}
-};
-
-struct ReturnStmt : Stmt
-{
-    std::unique_ptr<Expr> value;
-    ReturnStmt(std::unique_ptr<Expr> value) : value(std::move(value)) {}
-};
-
-struct BlockStmt : Stmt
-{
-    std::vector<std::unique_ptr<Stmt>> statements;
-
-    BlockStmt(std::vector<std::unique_ptr<Stmt>> statements)
-        : statements(std::move(statements)) {}
-};
-
-struct FunctionStmt : Stmt
-{
-    std::string name;
-    std::vector<std::string> params;
-    std::unique_ptr<BlockStmt> body;
-    FunctionStmt(std::string name, std::vector<std::string> params, std::unique_ptr<BlockStmt> body)
-        : name(std::move(name)), params(std::move(params)), body(std::move(body)) {}
-};
+#include "expr.hpp"
+#include "stmt.hpp"
 
 class Parser
 {
+    std::string file_name;
     const std::vector<Token> tokens;
     std::size_t pos = 0;
 
 public:
-    Parser(std::vector<Token> tokens) : tokens(std::move(tokens))
-    {
-    }
+    Parser(std::string file_name, std::vector<Token> tokens) : file_name(std::move(file_name)), tokens(std::move(tokens)) {}
 
 private:
+    // Get current token and advance to next
     const Token &advance()
     {
         if (!this->is_at_end())
@@ -118,21 +25,25 @@ private:
         return this->tokens.back();
     }
 
+    // Get current token
     const Token &peek() const
     {
         return this->tokens[this->pos];
     }
 
+    // Check if all tokens have been used up
     bool is_at_end() const
     {
         return this->pos >= this->tokens.size();
     }
 
+    // Get previous token
     const Token &previous() const
     {
         return this->tokens[this->pos - 1];
     }
 
+    // Check if token is of given type and value
     bool check(TokenType type, const std::string &val = "") const
     {
         if (this->is_at_end())
@@ -143,6 +54,7 @@ private:
         return this->peek().type == type && (val.empty() || this->peek().value == val);
     }
 
+    // Check current token and move on to next
     bool match(TokenType type, const std::string &val = "")
     {
         if (this->check(type, val))
@@ -153,6 +65,9 @@ private:
         return false;
     }
 
+    // Check if current token is of given type and value.
+    // Advance if true.
+    // Error out if false.
     const Token &consume(TokenType type, const std::string &val, const std::string &msg)
     {
         if (this->check(type, val))
@@ -162,6 +77,8 @@ private:
         this->error(msg + " at line " + std::to_string(this->peek().line));
     }
 
+    // Same as previously.
+    // Check if current token is of given type only.
     const Token &consume(TokenType type, const std::string &msg)
     {
         if (this->check(type))
@@ -177,7 +94,7 @@ private:
         {
             return 10;
         }
-        if (op == "+" || op == "-")
+        if (op == "*" || op == "/")
         {
             return 20;
         }
@@ -239,7 +156,7 @@ private:
             return expr;
         }
 
-        throw std::runtime_error("Unexpected token in expression: " + peek().value);
+        this->error("Unexpected token in expression: " + peek().value);
     }
 
     std::unique_ptr<Expr> parse_led(std::unique_ptr<Expr> left, const std::string &op)
@@ -288,13 +205,6 @@ private:
 
     std::unique_ptr<Stmt> parse_statement()
     {
-        // if (match(TokenType::Keyword, "return"))
-        // {
-        //     auto value = parse_expression();
-        //     consume(TokenType::Symbol, ";", "Expected ';' after return value");
-        //     return std::make_unique<ReturnStmt>(std::move(value));
-        // }
-        // return parse_expression_statement();
         if (match(TokenType::Keyword, "return"))
         {
             std::unique_ptr<Expr> value = nullptr;
@@ -338,7 +248,7 @@ private:
         else
         {
             const auto &tok = peek();
-            std::cerr << "[PARSER] " << "<FILE_NAME>" << ":" << tok.line << ":" << tok.column
+            std::cerr << "[PARSER] " << this->file_name << ":" << tok.line << ":" << tok.column
                       << ": " << message
                       << " near token '" << tok.value << "'\n";
         }

@@ -6,7 +6,17 @@ fn add(a, b) {
     return a + b;
 }
 
+fn void() {
+    return;
+}
+
 fn main() {
+    // Comment
     println("Hello");
-    println(add(a, b));
+    println(add(a, b), "should be equal to", c);
+
+    // void
+    void();
+
+    return 69;
 }

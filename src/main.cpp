@@ -29,14 +29,14 @@ int main(int argc, const char *argv[])
         content << input.rdbuf();
     }
 
-    std::cout << content.str() << '\n';
+    // std::cout << content.str() << '\n';
 
     Lexer lexer("main.jank", content.str());
     auto tokens = lexer.tokenize();
-    lexer.print_tokens(tokens);
+    // lexer.print_tokens(tokens);
 
     // Parser parser(tokens);
-    auto program = Parser(tokens).parse_program();
+    auto program = Parser("main.jank", tokens).parse_program();
 
     ASTPrinter printer;
     for (const auto &stmt : program)

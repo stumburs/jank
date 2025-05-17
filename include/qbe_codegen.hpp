@@ -3,6 +3,8 @@
 #include <sstream>
 #include "parser.hpp"
 #include <unordered_map>
+#include <iomanip>
+#include <cstring>
 
 class QBECodegen
 {
@@ -25,12 +27,61 @@ public:
         return base + std::to_string(label_count++);
     }
 
-    // Emit
-    void emit_global_let(const std::string &name)
+    // Convert a double (64-bit) to IEEE-754 hex string (e.g., 0x4034800000000000)
+    std::string double_to_hex(double value)
     {
-        std::string label = "@" + name;
-        globals[name] = label;
-        out << label << " = data l 0\n"; // default to int for now
+        uint64_t bits;
+        std::memcpy(&bits, &value, sizeof(bits));
+
+        std::stringstream ss;
+        ss << "0x" << std::hex << std::setfill('0') << std::setw(16) << bits;
+        return ss.str();
+    }
+
+    void emit_return(const ReturnStmt *ret)
+    {
+        // std::string val = emit_expr(ret->value.get());
+        // out << "\tret " << val << "\n";
+        out << "\tret 0" << "\n";
+    }
+
+    void emit_expr_stmt(const ExprStmt *expr_stmt)
+    {
+        emit_expr(expr_stmt->expr.get());
+    }
+
+    // Emit
+    void emit_global_let(const LetStmt *let)
+    {
+        std::string label = "$" + let->name;
+        globals[let->name] = label;
+
+        const Expr *init = let->value.get();
+
+        out << "data " << label << " = { ";
+
+        if (auto intlit = dynamic_cast<const IntExpr *>(init))
+        {
+            out << "l " << intlit->value;
+        }
+        else if (auto floatlit = dynamic_cast<const FloatExpr *>(init))
+        {
+            out << "d " << floatlit->value;
+            // out << "d " << double_to_hex(floatlit->value);
+        }
+        else if (auto strlit = dynamic_cast<const StringExpr *>(init))
+        {
+            std::string str_label = "$.str." + let->name;
+            out << "l " << str_label << " }\n";
+            out << "data " << str_label << " = { b \"" << strlit->value << "\\00\" }";
+            return;
+        }
+        else
+        {
+            error(init, "Unsupported global initializer.");
+        }
+
+        out << " }\n";
     }
 
     void emit_start()
@@ -47,14 +98,24 @@ public:
     // Emit a function
     void emit_function(const FunctionStmt *fn)
     {
-        out << "\n$" << fn->name << " = function l () {\n"; // TODO: adjust return/param types
+        std::string name = (fn->name == "main") ? "_jank_user_main" : fn->name;
+        out << "\n$" << name << " = function l ("; // TODO: adjust return/param types
+        for (size_t i = 0; i < fn->params.size(); i++)
+        {
+            if (i > 0)
+            {
+                out << ", ";
+            }
+            out << "l %" << fn->params[i];
+        }
+        out << ") {\n";
+
         out << gen_label("entry") << ":\n";
 
         locals.clear();
         for (size_t i = 0; i < fn->params.size(); ++i)
         {
-            std::string param_reg = "%" + fn->params[i];
-            locals[fn->params[i]] = param_reg;
+            locals[fn->params[i]] = "%" + fn->params[i];
         }
 
         for (const auto &stmt : fn->body->statements)
@@ -86,7 +147,15 @@ public:
         }
         else if (auto exprstmt = dynamic_cast<const ExprStmt *>(stmt))
         {
-            emit_expr(exprstmt->expr.get()); // ignore result
+            emit_expr_stmt(exprstmt);
+        }
+        else if (auto ret = dynamic_cast<const ReturnStmt *>(stmt))
+        {
+            emit_return(ret);
+        }
+        else
+        {
+            throw std::runtime_error("Unknown statement in codegen");
         }
     }
 
@@ -95,14 +164,14 @@ public:
         if (auto intlit = dynamic_cast<const IntExpr *>(expr))
         {
             std::string reg = gen_temp();
-            out << "\t" << reg << " =l const " << intlit->value << "\n";
+            out << "\t" << reg << " = l const " << intlit->value << "\n";
             return reg;
         }
 
         if (auto floatlit = dynamic_cast<const FloatExpr *>(expr))
         {
             std::string reg = gen_temp();
-            out << "\t" << reg << " =d const " << floatlit->value << "\n";
+            out << "\t" << reg << " = d const " << floatlit->value << "\n";
             return reg;
         }
 
@@ -110,7 +179,7 @@ public:
         {
             std::string reg = gen_temp();
             // Assuming you have a way to handle string constants in QBE
-            out << "\t" << reg << " =s const \"" << stringlit->value << "\"\n";
+            out << "\t" << reg << " = s const \"" << stringlit->value << "\"\n";
             return reg;
         }
 
@@ -123,7 +192,7 @@ public:
             else if (globals.count(ident->name))
             {
                 std::string reg = gen_temp();
-                out << "\t" << reg << " =l load " << globals[ident->name] << "\n";
+                out << "\t" << reg << " = l load " << globals[ident->name] << "\n";
                 return reg;
             }
             throw std::runtime_error("Undefined variable: " + ident->name);
@@ -136,7 +205,7 @@ public:
             std::string result = gen_temp();
 
             if (bin->op == "+")
-                out << "\t" << result << " =l add " << lhs << ", " << rhs << "\n";
+                out << "\t" << result << " = l add " << lhs << ", " << rhs << "\n";
             else if (bin->op == "-")
                 out << "\t" << result << " =l sub " << lhs << ", " << rhs << "\n";
             else if (bin->op == "*")
@@ -228,58 +297,60 @@ public:
         error(expr, "Unknown expression in codegen");
     }
 
-    // void emit_program(const std::vector<std::unique_ptr<Stmt>> &stmts)
-    // {
-    //     for (const auto &stmt : stmts)
-    //     {
-    //         if (auto let = dynamic_cast<const LetStmt *>(stmt.get()))
-    //         {
-    //             emit_global_let(let->name); // just declares for now
-    //         }
-    //     }
-
-    //     for (const auto &stmt : stmts)
-    //     {
-    //         if (auto fn = dynamic_cast<const FunctionStmt *>(stmt.get()))
-    //         {
-    //             emit_function(fn);
-    //         }
-    //     }
-    // }
-
     void emit_program(const std::vector<std::unique_ptr<Stmt>> &stmts)
     {
+        std::vector<const LetStmt *> computed_globals;
+
         // 1) Emit globals
         for (const auto &stmt : stmts)
         {
             if (auto let = dynamic_cast<const LetStmt *>(stmt.get()))
             {
-                emit_global_let(let->name); // just declares for now
+                const Expr *init = let->value.get();
+                if (dynamic_cast<const IntExpr *>(init) ||
+                    dynamic_cast<const FloatExpr *>(init) ||
+                    dynamic_cast<const StringExpr *>(init))
+                {
+                    emit_global_let(let);
+                }
+                else
+                {
+                    computed_globals.push_back(let);
+                    std::string label = "$" + let->name;
+                    globals[let->name] = label;
+                    out << "data " << label << " = { l 0 }\n"; // zero-init, runtime will overwrite
+                }
             }
         }
 
         // 2) Emit functions and check for main
-        bool found_main = false;
+        bool has_main = false;
         for (const auto &stmt : stmts)
         {
             if (auto fn = dynamic_cast<const FunctionStmt *>(stmt.get()))
             {
                 if (fn->name == "main")
-                    found_main = true;
+                    has_main = true;
                 emit_function(fn);
             }
         }
 
-        if (!found_main)
+        if (!has_main)
             throw std::runtime_error("Mandatory function 'main' not found.");
 
         // 3) Emit the real program entry point that calls main
-        out << "\n@start = data l 0\n"; // define the entry label data
+        out << "\nexport function w $main() {\n";
+        out << "@start\n";
 
-        out << "\n$start = function l () {\n";
-        out << "entry0:\n";
-        out << "\t%0 = call $main()\n";
-        out << "\tret %0\n";
+        // Emit computed globals
+        for (auto let : computed_globals)
+        {
+            std::string reg = emit_expr(let->value.get());
+            out << "\tstore" << "l " << reg << ", $" << let->name << "\n";
+        }
+
+        out << "\tcall $_jank_user_main()\n";
+        out << "\tret 0\n";
         out << "}\n";
     }
 
